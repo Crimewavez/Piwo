@@ -1,156 +1,145 @@
 # 🍺 PIWO
 
-**MOHAA server and mod setup without the usual mess.**
+**A mod framework and server toolkit for Medal of Honor: Allied Assault and OpenMoHAA.**
 
-PIWO is a server management tool for Medal of Honor: Allied Assault and OpenMoHAA.
+PIWO provides a common structure and configuration system for MOHAA server mods, together with tools for quickly deploying and managing an OpenMoHAA server on Linux.
 
-It provides a ready-made structure for running a dedicated server, installing supported mods, managing their configuration, and keeping the whole setup in one place.
+Existing mods are adapted or rewritten for PIWO so they follow the same configuration conventions and are designed to work together instead of behaving as unrelated script packages.
 
-PIWO does not replace OpenMoHAA's mod or scripting systems. It manages the mess and configuration around them.
+## What does PIWO provide?
 
-## What is PIWO?
+PIWO consists of two main parts:
 
-Running a modded MOHAA server usually means manually dealing with:
+### Mod framework
 
-* PK3 files
-* server CFGs
-* mod-specific CFGs
-* scripts
-* launch arguments
-* file ordering
-* Linux permissions
-* startup scripts
-* systemd services
-* logs
-
-PIWO handles the repetitive server-administration side of that.
-
-Supported mods come with a PIWO integration describing which of their existing settings PIWO can configure. You configure the server through PIWO, and PIWO handles the rest.
-
-## Example
-
-Instead of manually maintaining several files you can keep the supported configuration together:
+Supported mods are maintained as PIWO-compatible versions and configured through one central YAML configuration.
 
 ```yaml
 mods:
   freezetag:
     enabled: true
+    freeze_time: 5
 
   weapon_manager:
     enabled: true
+    sniper: true
+    rocket: false
 ```
 
-Exactly which settings are available depends on the mod being managed. PIWO does not add configuration options that the underlying mod or OpenMoHAA does not support.
 
-## Features
+### Server toolkit
 
-* Central PIWO configuration
-* Installation of supported mods
-* Enable/disable supported mod packages
-* Generation of server and mod CFG files
-* Sensible default configurations
-* OpenMoHAA dedicated-server setup
-* Linux service setup using systemd
-* Server start, stop and restart
-* Log access
-* Configuration validation
-* Installation and server health checks
-* Simple structure for adding support for additional mods
+PIWO also provides scripts for preparing and installing a server on a fresh Linux VPS.
 
-## Supported Mods
+The tooling can handle things such as:
 
-PIWO ships with integrations for commonly used MOHAA mods.
+* OpenMoHAA installation
+* server directories
+* Linux users and permissions
+* required dependencies
+* systemd service setup
+* firewall configuration
+* PIWO installation
+* bundled PIWO mods
+* basic server configuration
+* updates and health checks
 
-For example:
+The goal is to make a fresh VPS usable as a MOHAA server with as little manual Linux configuration as possible.
+
+## Per-map configuration
+
+Every map can have its own YAML file which overrides the global PIWO configuration.
+
+Global configuration:
+
+```yaml
+mods:
+  freezetag:
+    freeze_time: 5
+
+  weapon_manager:
+    sniper: true
+```
+
+`maps/mp_foy.yaml`:
+
+```yaml
+mods:
+  weapon_manager:
+    sniper: false
+```
+
+Only settings that differ from the global configuration need to be specified.
+
+## Conditional CFGs
+
+PIWO can also apply ordinary MOHAA CFG files based on server conditions.
+
+```yaml
+configs:
+  low_pop:
+    file: lowpop.cfg
+    players:
+      max: 6
+
+  night:
+    file: night.cfg
+    time:
+      from: "22:00"
+      to: "06:00"
+
+  weekend:
+    file: weekend.cfg
+    days:
+      - saturday
+      - sunday
+```
+
+The CFG files can be named however you want. This can be used to change server behaviour based on:
+
+* player count
+* time of day
+* day of week
+* other supported server conditions
+
+## PIWO mods
+
+PIWO ships with maintained versions of commonly used MOHAA mods. Planned examples include:
 
 * FreezeTag
 * BaseBuilder
 * Weapon Manager
-* Realism configurations
+* realism-related modules
 * more over time
 
-A PIWO integration contains the files, defaults and configuration information required to install and configure that particular mod.
+A PIWO port may modify or restructure the original mod to use PIWO's configuration and integration conventions. Not every internal value becomes configurable. PIWO exposes settings that are useful to server administrators.
 
-## Adding Mods
+## Quick installation
 
-Additional configuration can be exposed when the underlying mod provides settings that PIWO can safely manage. Adding support for a new mod therefore mostly means teaching PIWO how that particular mod is installed and configured. It does not modify the mod itself.
-
-## Server Setup
-
-PIWO can prepare a Linux machine for hosting OpenMoHAA.
-
-The setup process can handle:
-
-* server directories
-* dedicated Linux user
-* permissions
-* OpenMoHAA server binaries
-* PIWO files
-* systemd service
-* server configuration
-* installed PIWO mod packages
-
-You still need to provide the required original Medal of Honor: Allied Assault game files. PIWO does not distribute proprietary MOHAA assets.
-
-## Server Management
-
-Typical commands may look like:
+A fresh VPS should require little more than running the PIWO setup script and answering a few questions.
 
 ```bash
-placeholder
+./install.sh
 ```
 
-Configuration management:
+The installer prepares the system, installs PIWO and OpenMoHAA components, configures the service, and creates the initial server setup.
 
-```bash
-placeholder
-```
+Original Medal of Honor: Allied Assault game files are not distributed by PIWO and must be provided separately.
 
-Mod management:
+## Goals
 
-```bash
-placeholder
-```
+PIWO aims to provide:
 
-## Diagnostics
-
-```bash
-piwo doctor
-```
-
-PIWO can check things such as:
-
-```text
-[OK] OpenMoHAA server binary found
-[OK] MOHAA game files found
-[OK] PIWO configuration valid
-[OK] server.cfg generated
-[OK] FreezeTag files installed
-[OK] server user has correct permissions
-[OK] UDP port 12203 available
-```
-
-This checks the server environment and PIWO-managed files. It is not a replacement for debugging bugs inside individual MOHAA mods.
-
-## Philosophy
-
-PIWO does not try to create a new modding system for MOHAA, it takes the modding system that already exists and makes the administrative side less painful.
-
-```text
-             PIWO
-               |
-     files / cfg / startup
-               |
-               v
-          OpenMoHAA
-               |
-        MOHAA scripts/mods
-```
-
-OpenMoHAA and individual mods remain responsible for gameplay, PIWO is responsible for putting the server together.
+* one predictable configuration system for supported mods
+* global settings with per-map overrides
+* mods designed to work together
+* conditional server configurations
+* fast deployment on a fresh Linux VPS
+* simple server maintenance
+* a clear structure for adding new PIWO mods
 
 ## Why PIWO?
 
-Because installing five mods should not mean manually reconstructing somebody's server setup from fifteen-year-old forum posts and twelve different CFG files.
+Because running a modded MOHAA server should not require manually stitching old mods together, and spending an evening configuring a VPS.
 
-Configure it. Start it. Grab a beer.
+Configure it. Run it. Grab a beer. 🍺
