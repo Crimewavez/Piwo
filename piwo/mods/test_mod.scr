@@ -1,0 +1,27 @@
+// Demonstrates a mod consuming the effective global/per-map YAML settings.
+main local.config: {
+
+	local.message_type = local.config["types"]["mods.test_mod.message"]
+
+	if (local.message_type != "string") {
+		conprintf "PIWO test_mod: mods.test_mod.message must be a string\n"
+
+		end
+	}
+
+	local.message = local.config["values"]["mods.test_mod.message"]
+
+	if (local.message == "") {
+		conprintf "PIWO test_mod: mods.test_mod.message cannot be empty\n"
+
+		end
+	}
+
+	setcvar "piwo_test_mod_message" local.message
+	conprintf ("PIWO test_mod: " + local.message + "\n")
+}end
+
+stop: {
+
+	setcvar "piwo_test_mod_message" ""
+}end

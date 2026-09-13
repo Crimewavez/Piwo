@@ -1,0 +1,516 @@
+// PIWO configuration parser. This deliberately accepts a small YAML subset;
+
+parse_file local.path: {
+
+	local.content = fs_read_content local.path
+
+	if (local.content == NIL) {
+		local.result["ok"] = 0
+		local.result["error"] = "cannot read " + local.path
+		local.result["line"] = 0
+
+		end local.result
+	}
+}end (waitthread parse_text local.content)
+
+parse_text local.content: {
+
+	local.doc["ok"] = 1
+	local.doc["error"] = ""
+	local.doc["line"] = 0
+	local.doc["paths"][0] = NIL
+	local.doc["types"][""] = NIL
+	local.doc["values"][""] = NIL
+
+	local.prefix[0] = ""
+	local.kind[0] = "map"
+	local.position = 0
+	local.number = 0
+	local.previous = -1
+	local.pending = -1
+
+	if (local.content.size > 32768) {
+		end (waitthread _error "configuration exceeds 32768 characters" 0)
+	}
+
+	while (local.position < local.content.size) {
+		local.number++
+		local.line = ""
+
+		while (local.position < local.content.size && local.content[local.position] != "\n") {
+			local.line += local.content[local.position]
+			local.position++
+		}
+
+		local.position++
+
+		local.line = waitthread _strip_comment local.line
+		local.line = waitthread _trim_right local.line
+
+		if (local.line == "") {
+			continue
+		}
+
+		local.spaces = 0
+		while (local.spaces < local.line.size && local.line[local.spaces] == " ") {
+			local.spaces++
+		}
+
+		if ((local.spaces % 2) != 0 || local.spaces > 16) {
+			end (waitthread _error "indentation must use two spaces (maximum depth 8)" local.number)
+		}
+
+		local.depth = local.spaces / 2
+
+		if (local.pending >= 0 && local.depth != local.pending) {
+			end (waitthread _error "expected an indented child" local.number)
+		}
+
+		if (local.depth > local.previous + 1 || local.kind[local.depth] == NIL) {
+			end (waitthread _error "unexpected indentation" local.number)
+		}
+
+		local.pending = -1
+		local.previous = local.depth
+
+		local.body = ""
+		for (local.i = local.spaces; local.i < local.line.size; local.i++) {
+			if (local.line[local.i] == "\t") {
+				end (waitthread _error "tabs are not supported" local.number)
+			}
+
+			local.body += local.line[local.i]
+		}
+
+		if (local.body[0] == "-" && (local.body.size == 1 || local.body[1] == " ")) {
+			if (local.depth == 0 || (local.kind[local.depth] != "list" && local.kind[local.depth] != "unknown")) {
+				end (waitthread _error "list item outside a list" local.number)
+			}
+
+			local.kind[local.depth] = "list"
+			local.path = local.prefix[local.depth]
+			local.doc["types"][local.path] = "list"
+
+			local.item = ""
+			for (local.i = 1; local.i < local.body.size; local.i++) {
+				local.item += local.body[local.i]
+			}
+
+			local.item = waitthread _trim local.item
+			if (local.item == "") {
+				end (waitthread _error "list items must be scalars" local.number)
+			}
+
+			local.scalar = waitthread _parse_scalar local.item
+
+			if (!local.scalar["ok"]) {
+				end (waitthread _error local.scalar["error"] local.number)
+			}
+
+			local.index = local.list_count[local.path]
+			if (local.index == NIL) {
+				local.index = 0
+			}
+
+			local.doc["values"][local.path][local.index] = local.scalar["value"]
+			local.doc["list_types"][local.path][local.index] = local.scalar["type"]
+			local.list_count[local.path] = local.index + 1
+
+			continue
+		}
+
+		if (local.kind[local.depth] == "unknown") {
+			local.kind[local.depth] = "map"
+			local.doc["types"][local.prefix[local.depth]] = "map"
+		}
+
+		if (local.kind[local.depth] != "map") {
+			end (waitthread _error "mapping entry inside a list" local.number)
+		}
+
+		local.colon = -1
+		for (local.i = 0; local.i < local.body.size; local.i++) {
+			if (local.body[local.i] == ":") {
+				local.colon = local.i
+				break
+			}
+		}
+
+		if (local.colon < 1) {
+			end (waitthread _error "expected key: value" local.number)
+		}
+
+		if (local.colon + 1 < local.body.size && local.body[local.colon + 1] != " ") {
+			end (waitthread _error "a mapping colon must be followed by a space" local.number)
+		}
+
+		local.key = ""
+		for (local.i = 0; local.i < local.colon; local.i++) {
+			local.key += local.body[local.i]
+		}
+
+		local.key = waitthread _trim local.key
+
+		if (!(waitthread _valid_key local.key)) {
+			end (waitthread _error "keys may contain only letters, digits, _ and -" local.number)
+		}
+
+		local.value = ""
+		for (local.i = local.colon + 1; local.i < local.body.size; local.i++) {
+			local.value += local.body[local.i]
+		}
+
+		local.value = waitthread _trim local.value
+		local.path = local.key
+
+		if (local.prefix[local.depth] != "") {
+			local.path = local.prefix[local.depth] + "." + local.key
+		}
+
+		if (local.doc["types"][local.path] != NIL) {
+			end (waitthread _error ("duplicate key " + local.path) local.number)
+		}
+
+		local.doc["paths"][local.doc["paths"].size] = local.path
+
+		// Invalidate an old child frame when the next sibling is parsed.
+		local.kind[local.depth + 1] = NIL
+
+		if (local.value == "") {
+			if (local.depth >= 8) {
+				end (waitthread _error "maximum nesting depth is 8" local.number)
+			}
+
+			local.doc["types"][local.path] = "pending"
+			local.prefix[local.depth + 1] = local.path
+			local.kind[local.depth + 1] = "unknown"
+			local.pending = local.depth + 1
+		}
+		else {
+			local.scalar = waitthread _parse_scalar local.value
+
+			if (!local.scalar["ok"]) {
+				end (waitthread _error local.scalar["error"] local.number)
+			}
+
+			local.doc["types"][local.path] = local.scalar["type"]
+			local.doc["values"][local.path] = local.scalar["value"]
+		}
+	}
+
+	if (local.pending >= 0) {
+		end (waitthread _error "expected an indented child" local.number)
+	}
+}end local.doc
+
+// Merge a per-map document over a global document. Lists replace wholesale;
+// maps merge by path. Neither input document is modified.
+merge local.global local.override: {
+
+	if (!local.global["ok"]) {
+		end local.global
+	}
+
+	if (!local.override["ok"]) {
+		end local.override
+	}
+
+	local.result["ok"] = 1
+	local.result["error"] = ""
+	local.result["line"] = 0
+	local.result["paths"][0] = NIL
+	local.result["types"][""] = NIL
+	local.result["values"][""] = NIL
+
+	for (local.pass = 0; local.pass < 2; local.pass++) {
+		if (local.pass == 0) {
+			local.doc = local.global
+		}
+		else {
+			local.doc = local.override
+		}
+
+		for (local.i = 0; local.i < local.doc["paths"].size; local.i++) {
+			local.path = local.doc["paths"][local.i]
+			local.old_type = local.result["types"][local.path]
+			local.new_type = local.doc["types"][local.path]
+			local.old_container = local.old_type == "map" || local.old_type == "list"
+			local.new_container = local.new_type == "map" || local.new_type == "list"
+			local.types_differ = local.old_type != local.new_type
+
+			if (local.old_type != NIL && local.types_differ && (local.old_container || local.new_container)) {
+				end (waitthread _error ("container type conflict at " + local.path) 0)
+			}
+
+			if (local.old_type == NIL) {
+				local.result["paths"][local.result["paths"].size] = local.path
+			}
+
+			local.result["types"][local.path] = local.new_type
+			local.result["values"][local.path] = local.doc["values"][local.path]
+
+			if (local.new_type == "list") {
+				local.result["list_types"][local.path] = local.doc["list_types"][local.path]
+			}
+		}
+	}
+}end local.result
+
+_error local.message local.line: {
+
+	local.result["ok"] = 0
+	local.result["error"] = local.message
+	local.result["line"] = local.line
+}end local.result
+
+_trim local.text: {
+
+	local.text = waitthread _trim_left local.text
+}end (waitthread _trim_right local.text)
+
+_trim_left local.text: {
+
+	local.i = 0
+	while (local.i < local.text.size && (local.text[local.i] == " " || local.text[local.i] < " "[0])) {
+		local.i++
+	}
+
+	local.result = ""
+	for (; local.i < local.text.size; local.i++) {
+		local.result += local.text[local.i]
+	}
+}end local.result
+
+_trim_right local.text: {
+
+	// Compare character values: this also removes CR from CRLF input. The
+	// script lexer does not interpret the literal "\\r" as carriage return.
+	local.last = local.text.size - 1
+	while (local.last >= 0 && (local.text[local.last] == " " || local.text[local.last] < " "[0])) {
+		local.last--
+	}
+
+	local.result = ""
+	for (local.i = 0; local.i <= local.last; local.i++) {
+		local.result += local.text[local.i]
+	}
+}end local.result
+
+_strip_comment local.text: {
+
+	local.result = ""
+	local.quote = ""
+	local.escape = 0
+
+	for (local.i = 0; local.i < local.text.size; local.i++) {
+		local.char = local.text[local.i]
+		if (local.quote == "\"") {
+			if (local.escape) {
+				local.escape = 0
+			}
+			else if (local.char == "\\") {
+				local.escape = 1
+			}
+			else if (local.char == "\"") {
+				local.quote = ""
+			}
+		}
+		else if (local.quote == "'") {
+			if (local.char == "'") {
+				local.quote = ""
+			}
+		}
+		else if (local.char == "\"" || local.char == "'") {
+			local.quote = local.char
+		}
+		else if (local.char == "#") {
+			if (local.i == 0) {
+				break
+			}
+
+			local.previous = local.text[local.i - 1]
+			if (local.previous == " " || local.previous == "\t") {
+				break
+			}
+		}
+
+		local.result += local.char
+	}
+}end local.result
+
+_valid_key local.key: {
+
+	if (local.key == "") {
+		end 0
+	}
+
+	local.allowed = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"
+
+	for (local.i = 0; local.i < local.key.size; local.i++) {
+		local.found = 0
+
+		for (local.j = 0; local.j < local.allowed.size; local.j++) {
+			if (local.key[local.i] == local.allowed[local.j]) {
+				local.found = 1
+				break
+			}
+		}
+
+		if (!local.found) {
+			end 0
+		}
+	}
+}end 1
+
+_parse_scalar local.text: {
+
+	local.result["ok"] = 1
+	local.result["error"] = ""
+
+	if (local.text[0] == "\"" || local.text[0] == "'") {
+		local.quote = local.text[0]
+		local.output = ""
+		local.closed = 0
+
+		for (local.i = 1; local.i < local.text.size; local.i++) {
+			local.char = local.text[local.i]
+			if (local.quote == "\"" && local.char == "\\") {
+				local.i++
+				if (local.i >= local.text.size) {
+					end (waitthread _scalar_error "unfinished escape")
+				}
+
+				local.char = local.text[local.i]
+				if (local.char == "n") {
+					local.char = "\n"
+				}
+				else if (local.char == "t") {
+					local.char = "\t"
+				}
+				else if (local.char != "\\" && local.char != "\"") {
+					end (waitthread _scalar_error "unsupported escape")
+				}
+			}
+			else if (local.char == local.quote) {
+				if (local.quote == "'" && local.i + 1 < local.text.size && local.text[local.i + 1] == "'") {
+					local.i++
+				}
+				else {
+					local.closed = 1
+					break
+				}
+			}
+
+			local.output += local.char
+		}
+
+		if (!local.closed || local.i != local.text.size - 1) {
+			end (waitthread _scalar_error "invalid quoted string")
+		}
+
+		local.result["type"] = "string"
+		local.result["value"] = local.output
+
+		end local.result
+	}
+
+	if (local.text == "true" || local.text == "false") {
+		local.result["type"] = "bool"
+		local.result["value"] = (local.text == "true")
+
+		end local.result
+	}
+
+	if (local.text == "null" || local.text == "~") {
+		local.result["type"] = "null"
+		local.result["value"] = NIL
+
+		end local.result
+	}
+
+	local.first = local.text[0]
+	local.unsupported_prefixes = "[{&*!|>"
+
+	for (local.i = 0; local.i < local.unsupported_prefixes.size; local.i++) {
+		if (local.first == local.unsupported_prefixes[local.i]) {
+			end (waitthread _scalar_error "unsupported YAML syntax")
+		}
+	}
+
+	for (local.i = 0; local.i + 1 < local.text.size; local.i++) {
+		if (local.text[local.i] == ":" && local.text[local.i + 1] == " ") {
+			end (waitthread _scalar_error "quote a string containing colon-space")
+		}
+	}
+
+	local.number = waitthread _parse_number local.text
+
+	if (local.number["ok"]) {
+		end local.number
+	}
+
+	if (local.text[0] == "-" || local.text[0] == "+" || (waitthread _is_digit local.text[0])) {
+		end (waitthread _scalar_error "invalid number; quote it if it is text")
+	}
+
+	local.result["type"] = "string"
+	local.result["value"] = local.text
+}end local.result
+
+_scalar_error local.message: {
+
+	local.result["ok"] = 0
+	local.result["error"] = local.message
+}end local.result
+
+_parse_number local.text: {
+
+	local.result["ok"] = 0
+	local.i = 0
+
+	if (local.text[0] == "-" || local.text[0] == "+") {
+		local.i++
+	}
+
+	local.digits = 0
+	local.dot = 0
+
+	for (; local.i < local.text.size; local.i++) {
+		local.char = local.text[local.i]
+		if (waitthread _is_digit local.char) {
+			local.digits++
+		}
+		else if (local.char == "." && !local.dot) {
+			local.dot = 1
+		}
+		else {
+			end local.result
+		}
+	}
+
+	if (local.digits == 0) {
+		end local.result
+	}
+
+	local.result["ok"] = 1
+
+	if (local.dot) {
+		local.result["type"] = "float"
+		local.result["value"] = float local.text
+	}
+	else {
+		local.result["type"] = "int"
+		local.result["value"] = int local.text
+	}
+}end local.result
+
+_is_digit local.char: {
+
+	local.digits = "0123456789"
+
+	for (local.i = 0; local.i < local.digits.size; local.i++) {
+		if (local.char == local.digits[local.i]) {
+			end 1
+		}
+	}
+}end 0

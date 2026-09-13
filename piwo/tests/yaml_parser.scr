@@ -1,0 +1,173 @@
+// Run from the map precache hook in an isolated OpenMoHAA test home.
+main: {
+
+	local.global_yaml = "mods:\n"
+	local.global_yaml += "  freezetag:\n"
+	local.global_yaml += "    enabled: true\n"
+	local.global_yaml += "    freeze_time: 5\n"
+	local.global_yaml += "  weapon_manager:\n"
+	local.global_yaml += "    sniper: true\n"
+	local.global_yaml += "configs:\n"
+	local.global_yaml += "  weekend:\n"
+	local.global_yaml += "    days:\n"
+	local.global_yaml += "      - saturday\n"
+	local.global_yaml += "      - sunday\n"
+
+	local.global = waitthread piwo/core/yaml.scr::parse_text local.global_yaml
+
+	if (!local.global["ok"]) {
+		println ("PIWO_TEST_FAIL global parse line " + local.global["line"] + ": " + local.global["error"])
+
+		end
+	}
+
+	local.global_values = local.global["values"]
+	local.global_days = local.global_values["configs.weekend.days"]
+
+	if (local.global_values["mods.freezetag.freeze_time"] != 5 || local.global_days[1] != "sunday") {
+		println "PIWO_TEST_FAIL global values"
+
+		end
+	}
+
+	local.map_yaml = "mods:\n"
+	local.map_yaml += "  freezetag:\n"
+	local.map_yaml += "    freeze_time: 8\n"
+	local.map_yaml += "  weapon_manager:\n"
+	local.map_yaml += "    sniper: false\n"
+
+	local.map = waitthread piwo/core/yaml.scr::parse_text local.map_yaml
+	local.effective = waitthread piwo/core/yaml.scr::merge local.global local.map
+
+	local.values = local.effective["values"]
+	local.freeze_overridden = local.values["mods.freezetag.freeze_time"] == 8
+	local.enabled_inherited = local.values["mods.freezetag.enabled"] == 1
+	local.sniper_disabled = local.values["mods.weapon_manager.sniper"] == 0
+
+	if (!local.effective["ok"] || !local.freeze_overridden || !local.enabled_inherited || !local.sniper_disabled) {
+		println "PIWO_TEST_FAIL merge"
+
+		end
+	}
+
+	local.lists = waitthread piwo/core/yaml.scr::parse_text "configs:\n  weekend:\n    days:\n      - friday\n"
+	local.effective = waitthread piwo/core/yaml.scr::merge local.global local.lists
+	local.days = local.effective["values"]["configs.weekend.days"]
+
+	if (!local.effective["ok"] || local.days.size != 1 || local.days[0] != "friday") {
+		println "PIWO_TEST_FAIL list override"
+
+		end
+	}
+
+	local.file = waitthread piwo/core/yaml.scr::parse_file "piwo/tests/fixtures/config.yaml"
+	local.file_values = local.file["values"]
+	local.file_name_valid = local.file_values["server.name"] == "PIWO test #1"
+	local.file_limit_valid = local.file_values["server.max_players"] == 24
+
+	if (!local.file["ok"] || !local.file_name_valid || !local.file_limit_valid) {
+		println "PIWO_TEST_FAIL VFS file read"
+
+		end
+	}
+
+	local.file = waitthread piwo/core/yaml.scr::parse_file "piwo/tests/fixtures/crlf.yaml"
+
+	if (!local.file["ok"] || local.file["values"]["server.name"] != "CRLF server") {
+		println "PIWO_TEST_FAIL CRLF file read"
+
+		end
+	}
+
+	local.missing = waitthread piwo/core/yaml.scr::parse_file "piwo/tests/fixtures/no-such-file.yaml"
+
+	if (local.missing["ok"]) {
+		println "PIWO_TEST_FAIL missing file"
+
+		end
+	}
+
+	local.scalars_yaml = "a: \"22:00\" # time\n"
+	local.scalars_yaml += "b: 'a#b'\n"
+	local.scalars_yaml += "c: null\n"
+	local.scalars_yaml += "d: -2.5\n"
+
+	local.quoted = waitthread piwo/core/yaml.scr::parse_text local.scalars_yaml
+	local.scalar_values = local.quoted["values"]
+	local.strings_valid = local.scalar_values["a"] == "22:00" && local.scalar_values["b"] == "a#b"
+	local.types_valid = local.quoted["types"]["c"] == "null" && local.scalar_values["d"] == -2.5
+
+	if (!local.quoted["ok"] || !local.strings_valid || !local.types_valid) {
+		println "PIWO_TEST_FAIL scalar parsing"
+
+		end
+	}
+
+	local.bad = waitthread piwo/core/yaml.scr::parse_text "a: 1\na: 2\n"
+
+	if (local.bad["ok"] || local.bad["line"] != 2) {
+		println "PIWO_TEST_FAIL duplicate detection"
+
+		end
+	}
+
+	local.bad = waitthread piwo/core/yaml.scr::parse_text "a:\n    b: true\n"
+
+	if (local.bad["ok"]) {
+		println "PIWO_TEST_FAIL indentation detection"
+
+		end
+	}
+
+	local.bad = waitthread piwo/core/yaml.scr::parse_text "a: [one, two]\n"
+
+	if (local.bad["ok"]) {
+		println "PIWO_TEST_FAIL unsupported syntax detection"
+
+		end
+	}
+
+	local.bad = waitthread piwo/core/yaml.scr::parse_text "a:bad\n"
+
+	if (local.bad["ok"]) {
+		println "PIWO_TEST_FAIL mapping colon spacing"
+
+		end
+	}
+
+	local.bad = waitthread piwo/core/yaml.scr::parse_text "a: unquoted: value\n"
+
+	if (local.bad["ok"]) {
+		println "PIWO_TEST_FAIL plain scalar colon spacing"
+
+		end
+	}
+
+	local.bad = waitthread piwo/core/yaml.scr::parse_text "a: value\n  child: bad\n"
+
+	if (local.bad["ok"]) {
+		println "PIWO_TEST_FAIL scalar child detection"
+
+		end
+	}
+
+	local.bad = waitthread piwo/core/yaml.scr::parse_text "a: \"unterminated\n"
+
+	if (local.bad["ok"]) {
+		println "PIWO_TEST_FAIL quote detection"
+
+		end
+	}
+
+	local.bad = waitthread piwo/core/yaml.scr::parse_text "a:\n  child: 1\n"
+	local.conflict = waitthread piwo/core/yaml.scr::parse_text "a:\n  - item\n"
+	local.bad = waitthread piwo/core/yaml.scr::merge local.bad local.conflict
+
+	if (local.bad["ok"]) {
+		println "PIWO_TEST_FAIL container conflict detection"
+
+		end
+	}
+
+	println "PIWO_TEST_PASS yaml_parser"
+}end

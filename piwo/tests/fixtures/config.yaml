@@ -1,0 +1,4 @@
+# Read through OpenMoHAA's virtual filesystem.
+server:
+  name: "PIWO test #1"
+  max_players: 24

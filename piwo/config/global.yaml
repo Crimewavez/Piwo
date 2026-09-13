@@ -1,0 +1,4 @@
+mods:
+  test_mod:
+    enabled: true
+    message: "Hello from PIWO"

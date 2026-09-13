@@ -1,0 +1,70 @@
+// Called by global/DMprecache.scr. Run once for each map initialization.
+main: {
+
+	if (level.piwo_started == 1) {
+		end
+	}
+
+	level.piwo_started = 1
+
+	// Cvars outlive map changes, so clear the demo mod's previous state.
+	waitthread piwo/mods/test_mod.scr::stop
+
+	local.global_path = "piwo/config/global.yaml"
+	local.global = waitthread piwo/core/yaml.scr::parse_file local.global_path
+
+	if (!local.global["ok"]) {
+		waitthread _config_error local.global_path local.global
+
+		end
+	}
+
+	local.map = getcvar "mapname"
+	local.map_path = "piwo/config/maps/" + local.map + ".yaml"
+	local.map_content = fs_read_content local.map_path
+	local.config = local.global
+
+	if (local.map_content != NIL) {
+		local.override = waitthread piwo/core/yaml.scr::parse_text local.map_content
+
+		if (!local.override["ok"]) {
+			waitthread _config_error local.map_path local.override
+
+			end
+		}
+
+		local.config = waitthread piwo/core/yaml.scr::merge local.global local.override
+
+		if (!local.config["ok"]) {
+			waitthread _config_error local.map_path local.config
+
+			end
+		}
+	}
+
+	level.piwo_config = local.config
+
+	waitthread _start_mods local.config
+}end
+
+_start_mods local.config: {
+
+	local.enabled_type = local.config["types"]["mods.test_mod.enabled"]
+
+	if (local.enabled_type != NIL && local.enabled_type != "bool") {
+		conprintf "PIWO: mods.test_mod.enabled must be true or false\n"
+
+		end
+	}
+
+	if (local.config["values"]["mods.test_mod.enabled"] != 1) {
+		end
+	}
+
+	waitthread piwo/mods/test_mod.scr::main local.config
+}end
+
+_config_error local.path local.result: {
+
+	conprintf ("PIWO: " + local.path + ":" + local.result["line"] + ": " + local.result["error"] + "\n")
+}end
