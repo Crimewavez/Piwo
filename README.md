@@ -8,6 +8,8 @@ See the [YAML configuration guide](piwo/docs/yaml.md) for the supported config f
 
 Existing mods are adapted or rewritten for PIWO so they follow the same configuration conventions and are designed to work together instead of behaving as unrelated script packages.
 
+**AI-driven contributions are accepted, but only if it's visible that you have read the output and gave solution a thought**
+
 ## What does PIWO provide?
 
 PIWO consists of two main parts:
