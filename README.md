@@ -4,6 +4,8 @@
 
 PIWO provides a common structure and configuration system for MOHAA server mods, together with tools for quickly deploying and managing an OpenMoHAA server on Linux.
 
+See the [YAML configuration guide](piwo/docs/yaml.md) for the supported config format.
+
 Existing mods are adapted or rewritten for PIWO so they follow the same configuration conventions and are designed to work together instead of behaving as unrelated script packages.
 
 ## What does PIWO provide?
